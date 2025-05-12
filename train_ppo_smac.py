@@ -6,6 +6,7 @@ import time
 import argparse
 from tqdm import tqdm
 from typing import Dict, List, Tuple, Optional, Union
+from torch.utils.tensorboard import SummaryWriter
 
 from smac_env_wrapper import SMACTextWrapper
 from model import QwenActorCritic
@@ -112,6 +113,12 @@ def parse_args():
         default="./checkpoints",
         help="Directory to save checkpoints",
     )
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default="./runs",
+        help="Directory to save TensorBoard logs",
+    )
 
     return parser.parse_args()
 
@@ -124,6 +131,17 @@ def train():
     # Create save directory if it doesn't exist
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
+
+    # Create TensorBoard log directory
+    tb_log_dir = os.path.join(
+        args.log_dir, f"{args.map_name}_{time.strftime('%Y%m%d-%H%M%S')}"
+    )
+    if not os.path.exists(tb_log_dir):
+        os.makedirs(tb_log_dir)
+    writer = SummaryWriter(tb_log_dir)
+
+    # Log hyperparameters
+    writer.add_hparams(vars(args), {})
 
     # Set random seeds
     np.random.seed(args.seed)
@@ -167,6 +185,7 @@ def train():
     # Training variables
     total_timesteps = args.total_timesteps
     num_updates = total_timesteps // args.rollout_length
+    global_step = 0
 
     # Logging variables
     episode_rewards = []
@@ -208,6 +227,7 @@ def train():
     for update in range(num_updates):
         # Collect rollout
         for step in range(args.rollout_length):
+            global_step += 1
             # Get action mask
             action_mask = env.get_action_mask()
             action_mask_tensor = torch.tensor(
@@ -253,7 +273,25 @@ def train():
                 # Log episode statistics
                 episode_rewards.append(episode_reward)
                 episode_lengths.append(episode_length)
-                episode_wins.append(1 if info.get("battle_won", False) else 0)
+                current_win = 1 if info.get("battle_won", False) else 0
+                episode_wins.append(current_win)
+
+                writer.add_scalar(
+                    "charts/episode_reward", episode_reward, episode_count
+                )
+                writer.add_scalar(
+                    "charts/episode_length", episode_length, episode_count
+                )
+                writer.add_scalar(
+                    "charts/win_rate",
+                    np.mean(episode_wins) if episode_wins else 0,
+                    episode_count,
+                )
+                writer.add_scalar(
+                    "charts/epsilon_greedy",
+                    env.epsilon if hasattr(env, "epsilon") else 0,
+                    episode_count,
+                )  # If epsilon exists
 
                 # Log episode
                 if episode_count % args.log_interval == 0:
@@ -308,6 +346,14 @@ def train():
             batch_size=args.batch_size,
         )
 
+        # Log metrics to TensorBoard
+        writer.add_scalar("losses/value_loss", metrics["value_loss"], update)
+        writer.add_scalar("losses/policy_loss", metrics["policy_loss"], update)
+        writer.add_scalar("losses/entropy", metrics["entropy"], update)
+        writer.add_scalar("losses/approx_kl", metrics["approx_kl"], update)
+        writer.add_scalar("losses/clip_fraction", metrics["clip_fraction"], update)
+        writer.add_scalar("losses/total_loss", metrics["total_loss"], update)
+
         # Update metrics
         for k, v in metrics.items():
             update_metrics[k].append(v)
@@ -359,6 +405,7 @@ def train():
 
     # Close environment
     env.close()
+    writer.close()
 
     # Final statistics
     print(f"Training completed in {time.time() - start_time:.2f} seconds")
