@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from typing import Dict, List, Tuple, Optional, Union
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 class PPOBuffer:
@@ -231,8 +232,14 @@ class PPO:
                 batch_action_masks = action_masks[batch_indices]
 
                 # Evaluate the batch with the current model
-                new_log_probs, entropy, values = self.model.evaluate_actions(
-                    batch_text_obs, batch_actions, batch_action_masks
+                new_log_probs, entropy, values = (
+                    self.model.module.evaluate_actions(
+                        batch_text_obs, batch_actions, batch_action_masks
+                    )
+                    if isinstance(self.model, DDP)
+                    else self.model.evaluate_actions(
+                        batch_text_obs, batch_actions, batch_action_masks
+                    )
                 )
 
                 # Calculate the ratio between new and old action probabilities
