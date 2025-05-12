@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Dict, List, Tuple, Optional, Union
+from peft import LoraConfig, TaskType, get_peft_model
 
 
 class QwenActorCritic(nn.Module):
@@ -14,6 +15,10 @@ class QwenActorCritic(nn.Module):
         n_agents: int,
         n_actions: int,
         device: str = "cuda",
+        use_lora: bool = False,
+        lora_r: int = 4,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.05,
     ):
         """Initialize the Qwen-based Actor-Critic model."""
         super().__init__()
@@ -21,7 +26,27 @@ class QwenActorCritic(nn.Module):
         # Load the Qwen model and tokenizer
         self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        self.qwen_model = AutoModelForCausalLM.from_pretrained(model_path)
+        # self.qwen_model = AutoModelForCausalLM.from_pretrained(model_path)
+        self.use_lora = use_lora
+
+        # Apply LoRA to the model if specified
+        if use_lora:
+            print("using lora")
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                target_modules=["q_proj", "k_proj"],
+                modules_to_save=[],
+                lora_dropout=lora_dropout,
+                bias="none",
+                task_type=TaskType.FEATURE_EXTRACTION,
+            )
+            self.qwen_model = get_peft_model(
+                AutoModelForCausalLM.from_pretrained(model_path), lora_config
+            )
+        else:
+            print("using full finetune")
+            self.qwen_model = AutoModelForCausalLM.from_pretrained(model_path)
 
         # Get the embedding dimension from the model
         self.hidden_size = self.qwen_model.config.hidden_size
@@ -49,8 +74,7 @@ class QwenActorCritic(nn.Module):
         ).to(self.device)
 
         # Get the output from the Qwen model
-        with torch.no_grad():  # Don't update the LLM parameters
-            outputs = self.qwen_model(**inputs, output_hidden_states=True)
+        outputs = self.qwen_model(**inputs, output_hidden_states=True)
 
         # Extract the last hidden state for the last token
         last_token_hidden_states = outputs.hidden_states[-1][:, -1, :]
@@ -151,6 +175,14 @@ class QwenActorCritic(nn.Module):
         entropy = action_dist.entropy()
 
         return action_log_prob, entropy, value
+
+    def save_lora_weights(self, path: str):
+        """Save the LoRA adapter weights."""
+        self.qwen_model.save_pretrained(path)
+
+    def load_lora_weights(self, path: str):
+        """Load the LoRA adapter weights."""
+        self.qwen_model.load_adapter(path, adapter_name="default")
 
 
 if __name__ == "__main__":

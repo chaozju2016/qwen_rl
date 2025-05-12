@@ -246,7 +246,7 @@ class PPO:
                 policy_loss = torch.max(policy_loss1, policy_loss2).mean()
 
                 # Compute the value loss
-                value_loss = F.mse_loss(values, batch_returns)
+                value_loss = F.mse_loss(values.unsqueeze(-1), batch_returns)
 
                 # Compute the entropy bonus
                 entropy_loss = -entropy.mean()

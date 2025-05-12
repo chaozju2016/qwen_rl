@@ -3,6 +3,7 @@ import torch
 import torch.optim as optim
 import numpy as np
 import time
+import datetime
 import argparse
 from tqdm import tqdm
 from typing import Dict, List, Tuple, Optional, Union
@@ -39,6 +40,17 @@ def parse_args():
         type=str,
         default=config.DEVICE,
         help="Device to run the model on ('cuda' or 'cpu')",
+    )
+    parser.add_argument(
+        "--use_lora",
+        action="store_true",
+        help="Whether to use LoRA for fine-tuning",
+    )
+    parser.add_argument(
+        "--load_checkpoint",
+        type=str,
+        default=None,
+        help="Path to checkpoint to load (optional)",
     )
 
     # PPO settings
@@ -123,6 +135,19 @@ def parse_args():
     return parser.parse_args()
 
 
+def print_trainable_parameters(model):
+    trainable_params = 0
+    all_params = 0
+    for _, param in model.named_parameters():
+        num_params = param.numel()
+        all_params += num_params
+        if param.requires_grad:
+            trainable_params += num_params
+    print(f"可训练参数量: {trainable_params}")
+    print(f"总参数量: {all_params}")
+    print(f"可训练参数占比: {100 * trainable_params / all_params:.2f}%")
+
+
 def train():
     """Main training function."""
     # Parse arguments
@@ -158,7 +183,21 @@ def train():
         n_agents=env.n_agents,
         n_actions=env.n_actions,
         device=args.device,
+        use_lora=args.use_lora,
     )
+
+    print_trainable_parameters(model=model)
+
+    # Load checkpoint if specified
+    if args.load_checkpoint:
+        if args.use_lora:
+            model.load_lora_weights(args.load_checkpoint)
+            print(f"Loaded LoRA weights from {args.load_checkpoint}")
+        else:
+            checkpoint = torch.load(args.load_checkpoint)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            print(f"Loaded checkpoint from {args.load_checkpoint}")
 
     # Create optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -372,16 +411,28 @@ def train():
 
         # Save model
         if update % args.save_interval == 0:
-            checkpoint_path = os.path.join(args.save_dir, f"model_{update}.pt")
-            torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "update": update,
-                    "args": vars(args),
-                },
-                checkpoint_path,
+            # get timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            checkpoint_path = os.path.join(
+                args.save_dir,
+                f"model_{update}@{num_updates}"
+                + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
+                + f"_Rmax{np.max(episode_rewards):.2f}_WR{np.mean(episode_wins):.2f}"
+                + f"_{timestamp}"
+                + ".pt",
             )
+            if args.use_lora:
+                model.save_lora_weights(checkpoint_path)
+            else:
+                torch.save(
+                    {
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "update": update,
+                        "args": vars(args),
+                    },
+                    checkpoint_path,
+                )
             print(f"Saved checkpoint to {checkpoint_path}")
 
         # Clear buffer
@@ -391,16 +442,28 @@ def train():
         progress_bar.update(1)
 
     # Final save
-    final_checkpoint_path = os.path.join(args.save_dir, "model_final.pt")
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "update": num_updates,
-            "args": vars(args),
-        },
-        final_checkpoint_path,
+    # get timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    final_checkpoint_path = os.path.join(
+        args.save_dir,
+        f"model_final{update}@{num_updates}"
+        + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
+        + f"_Rmax{np.max(episode_rewards):.2f}_WR{np.mean(episode_wins):.2f}"
+        + f"_{timestamp}"
+        + ".pt",
     )
+    if args.use_lora:
+        model.save_lora_weights(final_checkpoint_path)
+    else:
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "update": num_updates,
+                "args": vars(args),
+            },
+            final_checkpoint_path,
+        )
     print(f"Saved final checkpoint to {final_checkpoint_path}")
 
     # Close environment
