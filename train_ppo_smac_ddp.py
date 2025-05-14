@@ -83,12 +83,6 @@ def parse_args():
         "--ppo_epochs", type=int, default=config.PPO_EPOCHS, help="Number of PPO epochs"
     )
     parser.add_argument(
-        "--n_mini_batches",
-        type=int,
-        default=config.NUM_MINI_BATCHES,
-        help="Number of mini-batches",
-    )
-    parser.add_argument(
         "--batch_size", type=int, default=config.BATCH_SIZE, help="Batch size"
     )
     parser.add_argument(

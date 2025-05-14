@@ -36,10 +36,10 @@ def parse_args():
         help="Path to the Qwen model",
     )
     parser.add_argument(
-        "--device",
+        "--device_map",
         type=str,
-        default=config.DEVICE,
-        help="Device to run the model on ('cuda' or 'cpu')",
+        default="auto",
+        help="Device map for the model (e.g., 'auto', 'balanced', etc.)",
     )
     parser.add_argument(
         "--use_lora",
@@ -59,12 +59,6 @@ def parse_args():
     )
     parser.add_argument(
         "--ppo_epochs", type=int, default=config.PPO_EPOCHS, help="Number of PPO epochs"
-    )
-    parser.add_argument(
-        "--n_mini_batches",
-        type=int,
-        default=config.NUM_MINI_BATCHES,
-        help="Number of mini-batches",
     )
     parser.add_argument(
         "--batch_size", type=int, default=config.BATCH_SIZE, help="Batch size"
@@ -158,9 +152,8 @@ def train():
         os.makedirs(args.save_dir)
 
     # Create TensorBoard log directory
-    tb_log_dir = os.path.join(
-        args.log_dir, f"{args.map_name}_{time.strftime('%Y%m%d-%H%M%S')}"
-    )
+    init_timestamp = time.strftime("%Y%m%d-%H%M%S")
+    tb_log_dir = os.path.join(args.log_dir, f"{args.map_name}_{init_timestamp}")
     if not os.path.exists(tb_log_dir):
         os.makedirs(tb_log_dir)
     writer = SummaryWriter(tb_log_dir)
@@ -171,8 +164,10 @@ def train():
     # Set random seeds
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if args.device == "cuda":
+    try:
         torch.cuda.manual_seed(args.seed)
+    except Exception as e:
+        print(f"Error setting CUDA seed: {e}")
 
     # Create environment
     env = SMACTextWrapper(map_name=args.map_name, seed=args.seed)
@@ -182,8 +177,8 @@ def train():
         model_path=args.model_path,
         n_agents=env.n_agents,
         n_actions=env.n_actions,
-        device=args.device,
         use_lora=args.use_lora,
+        device_map=args.device_map,
     )
 
     print_trainable_parameters(model=model)
@@ -206,7 +201,6 @@ def train():
     ppo_agent = PPO(
         model=model,
         optimizer=optimizer,
-        device=args.device,
         clip_eps=args.clip_eps,
         vf_coef=args.vf_coef,
         ent_coef=args.ent_coef,
@@ -218,7 +212,6 @@ def train():
     buffer = PPOBuffer(
         size=args.rollout_length,
         n_agents=env.n_agents,
-        device=args.device,
     )
 
     # Training variables
@@ -270,7 +263,7 @@ def train():
             # Get action mask
             action_mask = env.get_action_mask()
             action_mask_tensor = torch.tensor(
-                action_mask, dtype=torch.bool, device=args.device
+                action_mask, dtype=torch.bool, device=model.out_device
             )
 
             # Get action and value
@@ -349,11 +342,12 @@ def train():
                 # Reset environment
                 text_obs = env.reset()
 
-        # Compute advantages and returns
+        # Compute 1 extra step to advantages and returns
+        # This step is done outside the loop to avoid double counting
         with torch.no_grad():
             next_action_mask = env.get_action_mask()
             next_action_mask_tensor = torch.tensor(
-                next_action_mask, dtype=torch.bool, device=args.device
+                next_action_mask, dtype=torch.bool, device=model.out_device
             )
             prompt = (
                 config.SYSTEM_PROMPT
@@ -410,14 +404,14 @@ def train():
             )
 
         # Save model
-        if update % args.save_interval == 0:
+        if update % args.save_interval == 0 and update >= args.save_interval:
             # get timestamp
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             checkpoint_path = os.path.join(
                 args.save_dir,
                 f"model_{update}@{num_updates}"
                 + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
-                + f"_Rmax{np.max(episode_rewards):.2f}_WR{np.mean(episode_wins):.2f}"
+                + f"_En{metrics['entropy']:.4f}_KL{metrics['approx_kl']:.4f}"
                 + f"_{timestamp}"
                 + ".pt",
             )
@@ -446,11 +440,13 @@ def train():
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     final_checkpoint_path = os.path.join(
         args.save_dir,
-        f"model_final{update}@{num_updates}"
-        + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
-        + f"_Rmax{np.max(episode_rewards):.2f}_WR{np.mean(episode_wins):.2f}"
-        + f"_{timestamp}"
-        + ".pt",
+        f"{args.map_name}_{init_timestamp}",
+        (
+            f"model_final{update}@{num_updates}"
+            + f"_Rmax{np.max(episode_rewards):.2f}_WR{np.mean(episode_wins):.2f}"
+            + f"_{timestamp}"
+            + ".pt"
+        ),
     )
     if args.use_lora:
         model.save_lora_weights(final_checkpoint_path)

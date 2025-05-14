@@ -7,10 +7,9 @@ SMAC_MAP_NAME = "8m"  # Example map, user can change this
 
 # PPO Hyperparameters
 LEARNING_RATE = 2.5e-6  # Typical for LLM fine-tuning
-PPO_EPOCHS = 4
-NUM_MINI_BATCHES = 4  # Adjust based on BATCH_SIZE and available memory
+PPO_EPOCHS = 1
 BATCH_SIZE = 1  # Number of (obs, action, ...) tuples per PPO update
-ROLLOUT_LENGTH = 30  # Number of steps to collect per environment before an update
+ROLLOUT_LENGTH = 32  # Number of steps to collect per environment before an update
 GAMMA = 0.99  # Discount factor
 GAE_LAMBDA = 0.95  # Lambda for GAE
 CLIP_EPS = 0.2  # PPO clipping parameter
@@ -22,7 +21,6 @@ TARGET_KL = None  # Target KL divergence for early stopping
 # Training settings
 TOTAL_TIMESTEPS = 1_000_000  # Total timesteps for training
 SEED = 42
-DEVICE = "cuda"  # "cuda" or "cpu"
 
 SYSTEM_PROMPT = """
 You are a feature extractor designed for reinforcement learning environments. Your task is to analyze battlefield information in the StarCraft Multi-Agent Challenge (SMAC) and generate high-quality state representations. These representations will be further used to predict the best actions for the agents.

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 from typing import Dict, List, Tuple, Optional, Union
 from peft import LoraConfig, TaskType, get_peft_model
 
@@ -14,53 +14,98 @@ class QwenActorCritic(nn.Module):
         model_path: str,
         n_agents: int,
         n_actions: int,
-        device: str = "cuda",
         use_lora: bool = False,
         lora_r: int = 4,
         lora_alpha: int = 16,
         lora_dropout: float = 0.05,
+        device_map: str = "balanced",
+        out_device: str = None,
     ):
         """Initialize the Qwen-based Actor-Critic model."""
         super().__init__()
 
-        # Load the Qwen model and tokenizer
-        self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
         # self.qwen_model = AutoModelForCausalLM.from_pretrained(model_path)
         self.use_lora = use_lora
 
         # Apply LoRA to the model if specified
+        # Use AutoModel instead of AutoModelForCausalLM to avoid using LM head
         if use_lora:
             print("using lora")
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
-                target_modules=["q_proj", "k_proj"],
+                target_modules=[
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                ],
                 modules_to_save=[],
                 lora_dropout=lora_dropout,
                 bias="none",
+                peft_type="LORA",
+                inference_mode=False,
                 task_type=TaskType.FEATURE_EXTRACTION,
+                init_lora_weights="gaussian",
             )
+
             self.qwen_model = get_peft_model(
-                AutoModelForCausalLM.from_pretrained(model_path), lora_config
+                AutoModel.from_pretrained(
+                    model_path,
+                    device_map=device_map,
+                    torch_dtype=torch.bfloat16,
+                ),
+                lora_config,
             )
+            self.qwen_model.config.use_cache = False
+
+            print(f"LoRA config: {self.qwen_model.peft_config}")
+
+            self.embedding_device = (
+                self.qwen_model.base_model.model.embed_tokens.weight.device
+            )
+            self.last_layer_device = next(
+                self.qwen_model.base_model.model.norm.parameters()
+            ).device
         else:
             print("using full finetune")
-            self.qwen_model = AutoModelForCausalLM.from_pretrained(model_path)
+            self.qwen_model = AutoModel.from_pretrained(
+                model_path,
+                device_map=device_map,
+                torch_dtype=torch.bfloat16,
+            )
+            self.qwen_model.config.use_cache = False
+
+            self.embedding_device = self.qwen_model.embed_tokens.weight.device
+            self.last_layer_device = next(self.qwen_model.norm.parameters()).device
+        print(f"Model config use_cache: {self.qwen_model.config.use_cache}")
+
+        if out_device is not None:
+            self.out_device = out_device
+        else:
+            self.out_device = self.last_layer_device
+        if device_map == "balanced_low_0":
+            self.out_device = "cuda:0"
+
+        print(f"Embedding device: {self.embedding_device}")
+        print(f"Last layer device: {self.last_layer_device}")
+        print(f"Output device: {self.out_device}")
 
         # Get the embedding dimension from the model
         self.hidden_size = self.qwen_model.config.hidden_size
-
         # Create action head (policy network)
         self.n_agents = n_agents
         self.n_actions = n_actions
-        self.action_head = nn.Linear(self.hidden_size, n_actions)
+        self.action_head = nn.Sequential(
+            nn.Linear(self.hidden_size, self.hidden_size // 2),
+            nn.LayerNorm(self.hidden_size // 2),  # 增加稳定性
+            nn.GELU(),
+            nn.Linear(self.hidden_size // 2, n_actions),
+        ).to(self.out_device)
 
         # Create value head (value network)
-        self.value_head = nn.Linear(self.hidden_size, 1)
-
-        # Move model to the specified device
-        self.to(device)
+        self.value_head = nn.Linear(self.hidden_size, 1).to(self.out_device)
 
     def _get_qwen_output(self, text_obs: Union[str, List[str]]) -> torch.Tensor:
         """Process the text observation through the Qwen model."""
@@ -71,15 +116,32 @@ class QwenActorCritic(nn.Module):
             padding=True,
             truncation=True,
             max_length=1024,  # Adjust based on observation length
-        ).to(self.device)
+        ).to(self.embedding_device)
+        attention_mask = inputs["attention_mask"].to(self.out_device)
 
         # Get the output from the Qwen model
-        outputs = self.qwen_model(**inputs, output_hidden_states=True)
+        # outputs = self.qwen_model(**inputs, output_hidden_states=True, use_cache=False)
+        hidden_states = (
+            self.qwen_model(**inputs, output_hidden_states=True, use_cache=False)
+            .hidden_states[-1]
+            .to(self.out_device)
+        )
 
         # Extract the last hidden state for the last token
-        last_token_hidden_states = outputs.hidden_states[-1][:, -1, :]
+        # last_token_hidden_states = hidden_states[:, -1, :]
+        last_token_hidden_states = self.mean_pooling(hidden_states, attention_mask)
 
         return last_token_hidden_states
+
+    def mean_pooling(self, hidden_states, attention_mask):
+        # 扩展注意力掩码到hidden_states的维度
+        expanded_mask = attention_mask.unsqueeze(-1).expand(hidden_states.size())
+        # 应用掩码并计算平均值
+        sum_hidden = torch.sum(hidden_states * expanded_mask, dim=1)
+        sum_mask = torch.sum(expanded_mask, dim=1)
+        # 避免除以0
+        sum_mask = torch.clamp(sum_mask, min=1e-9)
+        return sum_hidden / sum_mask
 
     def forward(
         self,
@@ -108,7 +170,6 @@ class QwenActorCritic(nn.Module):
         except TypeError:
             print(f"text_obs: {type(text_obs)} {text_obs}")
             exit()
-        # print(f"hidden_states: {hidden_states.shape}")
 
         # Compute action logits
         action_logits = self.action_head(hidden_states)
@@ -116,13 +177,13 @@ class QwenActorCritic(nn.Module):
         # Apply action masks if provided
         if action_masks is not None:
             # Set the logits of invalid actions to a large negative value
-            # print(f"action_logits: {action_logits.shape}")
-            # print(f"action_masks: {action_masks.shape}")
             action_logits = action_logits.masked_fill(action_masks == 0, -1e9)
 
-        # exit()
         # Compute value estimate
         value = self.value_head(hidden_states)
+        # In PPO, value should be global
+        # apply mean pooling across all agents
+        value = torch.mean(value, dim=0)
 
         return action_logits, value
 
@@ -148,9 +209,18 @@ class QwenActorCritic(nn.Module):
 
         # Compute the log probability of the actions
         action_log_prob = action_dist.log_prob(action)
+        # In PPO, sum of products of log probability and advantage
+        # is equivalent to products of advantage sum of log probability
+        action_log_prob = torch.sum(action_log_prob.unsqueeze(-1), dim=0)
 
         # Compute the entropy of the action distribution
         entropy = action_dist.entropy()
+        # In PPO, entropy should be global
+        # apply mean pooling across all agents
+        # divide by square root of number of agents
+        entropy = torch.sum(entropy.unsqueeze(-1), dim=0) / torch.sqrt(
+            torch.tensor(self.n_agents, dtype=entropy.dtype, device=entropy.device)
+        )
 
         return action, action_log_prob, entropy, value
 
@@ -170,9 +240,13 @@ class QwenActorCritic(nn.Module):
 
         # Compute the log probability of the actions
         action_log_prob = action_dist.log_prob(actions)
+        action_log_prob = torch.sum(action_log_prob.unsqueeze(-1), dim=0)
 
         # Compute the entropy of the action distribution
         entropy = action_dist.entropy()
+        entropy = torch.sum(entropy.unsqueeze(-1), dim=0) / torch.sqrt(
+            torch.tensor(self.n_agents, dtype=entropy.dtype, device=entropy.device)
+        )
 
         return action_log_prob, entropy, value
 
@@ -187,8 +261,14 @@ class QwenActorCritic(nn.Module):
 
 if __name__ == "__main__":
     # Example usage
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = QwenActorCritic(model_path="Qwen/Qwen3-0.6B", n_actions=11, device=device)
+    model = QwenActorCritic(
+        model_path="Qwen/Qwen3-0.6B",
+        n_agents=5,
+        n_actions=11,
+        use_lora=False,
+        device_map="cpu",
+        out_device="cpu",
+    )
     text_obs = """Map Config: The map is 2s3z of 32*32 sized square map.
 The available area of x axis is from 0 to 32, and the y axis is from 7 to 25.
 The enemy units are at (23, 16) point and your units are at (9, 16) point initially.
@@ -211,11 +291,25 @@ Agent 2 zealot is at (8.25, 16.75) with 100/100 Health and 50/50 Shield
 Agent 3 zealot is at (9.75, 16.75) with 100/100 Health and 50/50 Shield
 Agent 4 zealot is at (9.94, 15.51) with 100/100 Health and 50/50 Shield
 No visible enemy units."""
-    action_masks = torch.ones((5, 11), device=device)  # Example action mask
+
+    print("=" * 20 + "Get Action and Value" + "=" * 20)
+
+    action_masks = torch.ones((5, 11), device=model.out_device)  # Example action mask
     action, log_prob, entropy, value = model.get_action_and_value(
         text_obs, action_masks
     )
-    print("Action:", action)
-    print("Log Probability:", log_prob)
-    print("Entropy:", entropy)
-    print("Value:", value)
+    print("Action:", action.shape)
+    print("Log Probability:", log_prob.shape)
+    print("Entropy:", entropy.shape)
+    print("Value:", value.shape)
+
+    print("=" * 20 + "Evaluate Actions" + "=" * 20)
+    batch_size = 5
+    # expand to match batch size
+    text_obs = [text_obs] * batch_size
+    actions = action.unsqueeze(0).expand(batch_size, -1)
+    action_masks = action_masks.unsqueeze(0).expand(batch_size, -1, -1)
+    log_prob, entropy, value = model.evaluate_actions(text_obs, actions, action_masks)
+    print("Log Probability:", log_prob.shape)
+    print("Entropy:", entropy.shape)
+    print("Value:", value.shape)

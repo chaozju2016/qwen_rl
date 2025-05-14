@@ -10,9 +10,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 class PPOBuffer:
     """Buffer for storing trajectories experienced by a PPO agent."""
 
-    def __init__(self, size: int, n_agents: int, device: str = "cuda"):
+    def __init__(self, size: int, n_agents: int):
         """Initialize the PPO buffer."""
-        self.device = device
         self.size = size
         self.n_agents = n_agents
         self.clear()
@@ -78,57 +77,38 @@ class PPOBuffer:
         trajectory_length = len(rewards)
 
         # Initialize arrays for advantages and returns
-        advantages = np.zeros((len(rewards), self.n_agents), dtype=np.float32)
-        returns = np.zeros((len(rewards), self.n_agents), dtype=np.float32)
+        # In PPO, we use global critic, so there is only one value/advantage for each timestep
+        advantages = np.zeros_like(rewards, dtype=np.float32)
+        returns = np.zeros_like(rewards, dtype=np.float32)
 
-        # Set the initial value for GAE calculation
-        if not isinstance(last_value, np.ndarray):
-            last_value = np.full(self.n_agents, last_value, dtype=np.float32)
-        next_value = last_value
+        if isinstance(last_value, np.ndarray):
+            assert last_value.shape == (1,)
+            values = np.append(values, last_value[None, :], axis=0)
+            returns = np.append(returns, last_value, axis=0)
+        else:
+            assert isinstance(last_value, values.dtype)
+            # Extend the values array with the last value
+            values = np.append(values, last_value)
+            returns = np.append(returns, last_value)
+
         next_advantage = 0.0
+        # Loop through the trajectory backwards
+        for t in reversed(range(trajectory_length)):
+            # 获取下一状态是否终止
+            next_non_terminal = 1.0 - dones[t]
 
-        for agent_id in range(self.n_agents):
-            # 为该智能体设置初始值
-            next_value = last_value[agent_id]
-            next_advantage = 0.0
+            # 计算TD误差
+            # values has been extended with last_value, so we can access t+1
+            delta = rewards[t] + gamma * values[t + 1] * next_non_terminal - values[t]
 
-            # Loop through the trajectory backwards
-            for t in reversed(range(trajectory_length)):
-                # 获取下一状态是否终止
-                next_non_terminal = 1.0 - dones[t]
+            # 计算GAE优势
+            advantages[t] = (
+                delta + gamma * gae_lambda * next_non_terminal * next_advantage
+            )
+            next_advantage = advantages[t]
 
-                # 计算TD误差
-                if t == trajectory_length - 1:
-                    # 对于轨迹的最后一步，使用提供的last_value
-                    delta = (
-                        rewards[t]
-                        + gamma * next_value * next_non_terminal
-                        - values[t, agent_id]
-                    )
-                else:
-                    # 对于轨迹的中间步骤，使用下一步的值估计
-                    delta = (
-                        rewards[t]
-                        + gamma * values[t + 1, agent_id] * next_non_terminal
-                        - values[t, agent_id]
-                    )
-
-                # 计算GAE优势
-                advantages[t, agent_id] = (
-                    delta + gamma * gae_lambda * next_non_terminal * next_advantage
-                )
-                next_advantage = advantages[t, agent_id]
-
-                # 计算回报（用于值函数损失）
-                if t == trajectory_length - 1:
-                    returns[t, agent_id] = (
-                        rewards[t] + gamma * next_value * next_non_terminal
-                    )
-                else:
-                    returns[t, agent_id] = (
-                        rewards[t]
-                        + gamma * returns[t + 1, agent_id] * next_non_terminal
-                    )
+            # 计算回报（用于值函数损失）
+            returns[t] = rewards[t] + gamma * returns[t + 1] * next_non_terminal
 
         # Store the computed advantages and returns
         self.advantages = advantages
@@ -162,7 +142,6 @@ class PPO:
         self,
         model: nn.Module,
         optimizer: optim.Optimizer,
-        device: str = "cuda",
         clip_eps: float = 0.2,
         vf_coef: float = 0.5,
         ent_coef: float = 0.01,
@@ -172,7 +151,7 @@ class PPO:
         """Initialize the PPO algorithm."""
         self.model = model
         self.optimizer = optimizer
-        self.device = device
+        self.device = self.model.out_device
         self.clip_eps = clip_eps
         self.vf_coef = vf_coef
         self.ent_coef = ent_coef
@@ -253,7 +232,7 @@ class PPO:
                 policy_loss = torch.max(policy_loss1, policy_loss2).mean()
 
                 # Compute the value loss
-                value_loss = F.mse_loss(values.unsqueeze(-1), batch_returns)
+                value_loss = F.mse_loss(values.squeeze(-1), batch_returns)
 
                 # Compute the entropy bonus
                 entropy_loss = -entropy.mean()
