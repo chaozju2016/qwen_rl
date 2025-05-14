@@ -409,11 +409,14 @@ def train():
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             checkpoint_path = os.path.join(
                 args.save_dir,
-                f"model_{update}@{num_updates}"
-                + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
-                + f"_En{metrics['entropy']:.4f}_KL{metrics['approx_kl']:.4f}"
-                + f"_{timestamp}"
-                + ".pt",
+                f"{args.map_name}_{init_timestamp}",
+                (
+                    f"model_{update}@{num_updates}"
+                    + f"_Lv{metrics['value_loss']:.4f}_Lp{metrics['policy_loss']:.4f}"
+                    + f"_En{metrics['entropy']:.4f}_KL{metrics['approx_kl']:.4f}"
+                    + f"_{timestamp}"
+                    + ".pt"
+                ),
             )
             if args.use_lora:
                 model.save_lora_weights(checkpoint_path)
