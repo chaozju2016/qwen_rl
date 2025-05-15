@@ -5,6 +5,41 @@ from configs.map_config import MapConfig
 QWEN_MODEL_PATH = "Qwen/Qwen3-0.6B"
 SMAC_MAP_NAME = "8m"  # Example map, user can change this
 
+# Device configuration for Qwen model
+DEVICE_MAP = {
+    "embed_tokens": "cuda:0",
+    "layers.0": "cuda:0",
+    "layers.1": "cuda:0",
+    "layers.2": "cuda:0",
+    "layers.3": "cuda:0",
+    "layers.4": "cuda:0",
+    "layers.5": "cuda:0",
+    "layers.6": "cuda:0",
+    "layers.7": "cuda:0",
+    "layers.8": "cuda:0",
+    "layers.9": "cuda:0",
+    "layers.10": "cuda:0",
+    "layers.11": "cuda:0",
+    "layers.12": "cuda:0",
+    "layers.13": "cuda:0",
+    "layers.14": "cuda:1",
+    "layers.15": "cuda:1",
+    "layers.16": "cuda:1",
+    "layers.17": "cuda:1",
+    "layers.18": "cuda:1",
+    "layers.19": "cuda:1",
+    "layers.20": "cuda:1",
+    "layers.21": "cuda:1",
+    "layers.22": "cuda:1",
+    "layers.23": "cuda:1",
+    "layers.24": "cuda:1",
+    "layers.25": "cuda:1",
+    "layers.26": "cuda:1",
+    "layers.27": "cuda:1",
+    "norm": "cuda:1",
+    "rotary_emb": "cuda:1",
+}
+
 # PPO Hyperparameters
 LEARNING_RATE = 2.5e-6  # Typical for LLM fine-tuning
 PPO_EPOCHS = 1

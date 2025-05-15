@@ -31,12 +31,12 @@ class PPOBuffer:
     def add(
         self,
         text_obs: str,
-        action: np.ndarray,
-        action_log_prob: np.ndarray,
+        action: torch.Tensor,
+        action_log_prob: torch.Tensor,
         reward: float,
         done: bool,
-        value: np.ndarray,
-        action_mask: np.ndarray,
+        value: torch.Tensor,
+        action_mask: torch.Tensor,
     ):
         """
         Add a transition to the buffer.
@@ -65,31 +65,31 @@ class PPOBuffer:
             self.trajectory_start_indices.append(self.ptr)
 
     def finish_trajectory(
-        self, last_value: np.ndarray, gamma: float = 0.99, gae_lambda: float = 0.95
+        self, last_value: torch.Tensor, gamma: float = 0.99, gae_lambda: float = 0.95
     ):
         """Compute advantages and returns for the current trajectory."""
         # Convert lists to arrays
-        rewards = np.array(self.rewards, dtype=np.float32)
-        values = np.array(self.values, dtype=np.float32)
-        dones = np.array(self.dones, dtype=np.float32)
+        rewards = torch.tensor(self.rewards, dtype=torch.bfloat16)
+        values = torch.tensor(self.values, dtype=torch.bfloat16)
+        dones = torch.tensor(self.dones, dtype=torch.bfloat16)
 
         # Get the length of the buffer
         trajectory_length = len(rewards)
 
         # Initialize arrays for advantages and returns
         # In PPO, we use global critic, so there is only one value/advantage for each timestep
-        advantages = np.zeros_like(rewards, dtype=np.float32)
-        returns = np.zeros_like(rewards, dtype=np.float32)
+        advantages = torch.zeros_like(rewards, dtype=torch.bfloat16)
+        returns = torch.zeros_like(rewards, dtype=torch.bfloat16)
 
-        if isinstance(last_value, np.ndarray):
+        if isinstance(last_value, torch.Tensor):
             assert last_value.shape == (1,)
-            values = np.append(values, last_value[None, :], axis=0)
-            returns = np.append(returns, last_value, axis=0)
+            values = torch.cat([values, last_value], axis=0)
+            returns = torch.cat([returns, last_value], axis=0)
         else:
             assert isinstance(last_value, values.dtype)
             # Extend the values array with the last value
-            values = np.append(values, last_value)
-            returns = np.append(returns, last_value)
+            values = torch.cat([values, torch.tensor(last_value)])
+            returns = torch.cat([returns, torch.tensor(last_value)])
 
         next_advantage = 0.0
         # Loop through the trajectory backwards
@@ -114,16 +114,16 @@ class PPOBuffer:
         self.advantages = advantages
         self.returns = returns
 
-    def get(self) -> Dict[str, Union[List, np.ndarray]]:
+    def get(self) -> Dict[str, Union[List, torch.Tensor]]:
         """Get the buffer data."""
         data = {
             "text_obs": self.text_obs,
-            "actions": np.array(self.actions),
-            "action_log_probs": np.array(self.action_log_probs),
-            "rewards": np.array(self.rewards),
-            "dones": np.array(self.dones),
-            "values": np.array(self.values),
-            "action_masks": np.array(self.action_masks),
+            "actions": torch.stack(self.actions),
+            "action_log_probs": torch.stack(self.action_log_probs),
+            "rewards": torch.tensor(self.rewards),
+            "dones": torch.tensor(self.dones),
+            "values": torch.stack(self.values),
+            "action_masks": torch.stack(self.action_masks),
             "advantages": self.advantages,
             "returns": self.returns,
             "trajectory_start_indices": self.trajectory_start_indices,
@@ -165,17 +165,11 @@ class PPO:
         # Get data from the buffer
         data = buffer.get()
         text_obs = data["text_obs"]
-        actions = torch.tensor(data["actions"], dtype=torch.long, device=self.device)
-        old_log_probs = torch.tensor(
-            data["action_log_probs"], dtype=torch.float32, device=self.device
-        )
-        advantages = torch.tensor(
-            data["advantages"], dtype=torch.float32, device=self.device
-        )
-        returns = torch.tensor(data["returns"], dtype=torch.float32, device=self.device)
-        action_masks = torch.tensor(
-            data["action_masks"], dtype=torch.bool, device=self.device
-        )
+        actions = data["actions"]
+        old_log_probs = data["action_log_probs"]
+        advantages = data["advantages"]
+        returns = data["returns"]
+        action_masks = data["action_masks"]
 
         # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -204,11 +198,21 @@ class PPO:
 
                 # Get batch data
                 batch_text_obs = [text_obs[i] for i in batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_old_log_probs = old_log_probs[batch_indices]
-                batch_advantages = advantages[batch_indices]
-                batch_returns = returns[batch_indices]
-                batch_action_masks = action_masks[batch_indices]
+                batch_actions = (
+                    actions[batch_indices].to(torch.bfloat16).to(self.device)
+                )
+                batch_old_log_probs = (
+                    old_log_probs[batch_indices].to(torch.bfloat16).to(self.device)
+                )
+                batch_advantages = (
+                    advantages[batch_indices].to(torch.bfloat16).to(self.device)
+                )
+                batch_returns = (
+                    returns[batch_indices].to(torch.bfloat16).to(self.device)
+                )
+                batch_action_masks = (
+                    action_masks[batch_indices].to(torch.bfloat16).to(self.device)
+                )
 
                 # Evaluate the batch with the current model
                 new_log_probs, entropy, values = (

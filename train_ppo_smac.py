@@ -37,8 +37,8 @@ def parse_args():
     )
     parser.add_argument(
         "--device_map",
-        type=str,
-        default="auto",
+        type=Union[str, Dict[str, str]],
+        default=config.DEVICE_MAP,
         help="Device map for the model (e.g., 'auto', 'balanced', etc.)",
     )
     parser.add_argument(
@@ -159,6 +159,9 @@ def train():
     writer = SummaryWriter(tb_log_dir)
 
     # Log hyperparameters
+    # backup device map because it is a dict
+    device_map_dict = args.device_map
+    args.device_map = str(device_map_dict)
     writer.add_hparams(vars(args), {})
 
     # Set random seeds
@@ -178,7 +181,7 @@ def train():
         n_agents=env.n_agents,
         n_actions=env.n_actions,
         use_lora=args.use_lora,
-        device_map=args.device_map,
+        device_map=device_map_dict,
     )
 
     print_trainable_parameters(model=model)
@@ -238,16 +241,13 @@ def train():
     print(f"Starting training for {total_timesteps} timesteps...")
 
     # Initial observation
-    text_obs = env.reset()
-    prompt = (
-        config.SYSTEM_PROMPT
-        + "\n"
-        + env.map_config
-        + "\n"
-        + env.unit_config
-        + "\n"
-        + text_obs
+    static_prompt = (
+        config.SYSTEM_PROMPT + "\n" + env.map_config + "\n" + env.unit_config + "\n"
     )
+    with torch.no_grad():
+        static_cache = model.get_static_kv_cache(static_text=static_prompt)
+
+    text_obs = env.reset()
 
     episode_reward = 0
     episode_length = 0
@@ -269,18 +269,19 @@ def train():
             # Get action and value
             with torch.no_grad():
                 action, action_log_prob, _, value = model.get_action_and_value(
-                    text_obs=prompt,
+                    text_obs=text_obs,
                     action_masks=action_mask_tensor,
                     deterministic=False,
                 )
 
             # Convert tensors to numpy
-            action_np = action.cpu().numpy()
-            action_log_prob_np = action_log_prob.cpu().numpy()
-            value_np = value.cpu().numpy().flatten()
+            action_cpu = action.cpu()
+            action_log_prob_cpu = action_log_prob.cpu()
+            value_cpu = value.cpu().flatten()
+            action_mask_cpu = action_mask_tensor.cpu()
 
             # Take a step in the environment
-            next_text_obs, reward, done, info = env.step(action_np)
+            next_text_obs, reward, done, info = env.step(action_cpu)
 
             # Add to episode statistics
             episode_reward += reward
@@ -288,13 +289,13 @@ def train():
 
             # Add to buffer
             buffer.add(
-                text_obs=prompt,
-                action=action_np,
-                action_log_prob=action_log_prob_np,
+                text_obs=text_obs,
+                action=action_cpu,
+                action_log_prob=action_log_prob_cpu,
                 reward=reward,
                 done=done,
-                value=value_np,
-                action_mask=action_mask,
+                value=value_cpu,
+                action_mask=action_mask_cpu,
             )
 
             # Update observation
@@ -349,25 +350,16 @@ def train():
             next_action_mask_tensor = torch.tensor(
                 next_action_mask, dtype=torch.bool, device=model.out_device
             )
-            prompt = (
-                config.SYSTEM_PROMPT
-                + "\n"
-                + env.map_config
-                + "\n"
-                + env.unit_config
-                + "\n"
-                + text_obs
-            )
             _, _, _, next_value = model.get_action_and_value(
-                text_obs=prompt,
+                text_obs=text_obs,
                 action_masks=next_action_mask_tensor,
                 deterministic=False,
             )
-            next_value_np = next_value.cpu().numpy().flatten()
+            next_value_cpu = next_value.cpu().flatten()
 
         # Finish the trajectory
         buffer.finish_trajectory(
-            last_value=next_value_np,
+            last_value=next_value_cpu,
             gamma=args.gamma,
             gae_lambda=args.gae_lambda,
         )
