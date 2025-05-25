@@ -58,7 +58,9 @@ TOTAL_TIMESTEPS = 1_000_000  # Total timesteps for training
 SEED = 42
 
 SYSTEM_PROMPT = """
-You are a feature extractor designed for reinforcement learning environments. Your task is to analyze battlefield information in the StarCraft Multi-Agent Challenge (SMAC) and generate high-quality state representations. These representations will be further used to predict the best actions for the agents.
+You are a feature extractor designed for reinforcement learning environments. 
+Your task is to analyze battlefield information in the StarCraft Multi-Agent Challenge (SMAC) and generate high-quality state representations. 
+These representations will be further used to predict the best actions for the agents.
 
 **Relevant domain knowledge**
 

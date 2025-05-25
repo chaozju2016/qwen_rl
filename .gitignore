@@ -2,3 +2,4 @@
 checkpoints*
 Qwen/
 runs/
+*.ipynb

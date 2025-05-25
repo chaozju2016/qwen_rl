@@ -37,7 +37,7 @@ def parse_args():
     )
     parser.add_argument(
         "--device_map",
-        type=Union[str, Dict[str, str]],
+        type=Dict[str, str],
         default=config.DEVICE_MAP,
         help="Device map for the model (e.g., 'auto', 'balanced', etc.)",
     )

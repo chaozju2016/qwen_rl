@@ -229,11 +229,11 @@ class PPO:
                 ratio = torch.exp(new_log_probs - batch_old_log_probs)
 
                 # Compute the policy loss using clipped objective
-                policy_loss1 = -batch_advantages * ratio
-                policy_loss2 = -batch_advantages * torch.clamp(
+                policy_loss1 = batch_advantages * ratio
+                policy_loss2 = batch_advantages * torch.clamp(
                     ratio, 1 - self.clip_eps, 1 + self.clip_eps
                 )
-                policy_loss = torch.max(policy_loss1, policy_loss2).mean()
+                policy_loss = -torch.min(policy_loss1, policy_loss2).mean()
 
                 # Compute the value loss
                 value_loss = F.mse_loss(values.squeeze(-1), batch_returns)

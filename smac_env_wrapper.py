@@ -104,6 +104,9 @@ class SMACTextWrapper:
 
         return text_obs, reward, done, info
 
+    def _act_to_text(self, act: np.ndarray) -> str:
+        return ",".join(np.asarray(act, dtype=str))
+
     def _obs_to_text(
         self,
         obs: List[np.ndarray],
