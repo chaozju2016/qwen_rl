@@ -29,29 +29,10 @@ json_path = "/mnt/HDD/wangchao/smac_v1_json/"
 # %%
 instruct_prompt = "Given these information, please give integer-indexed action for each agent, for example, if you control 3 agents that should perform action 5, action 6 and action 2, response 5,6,2\n\n"
 
-output_format = {
-    "LongCat": {
-        "system": ["", ""],
-        "user": ["[Round 0] USER:", ""],
-        "assistant": ["", instruct_prompt + " ASSISTANT:"],
-        "target": ["", ""],
-    },
-    "Qwen": {
-        "system": ["<|im_start|>system:\n", "<|im_end|>\n\n"],
-        "user": ["<|im_start|>user:\n", "<|im_end|>\n\n"],
-        "assistant": ["", instruct_prompt + "<|im_start|>assistant:\n"],
-        "target": ["", "<|im_end|>\n\n"],
-    },
-}
-
-
-# %%
-output_type = "LongCat"
-prompt_format = output_format[output_type]
-
 
 # %%
 for vault_name in vault_name_list:
+    env = SMACTextWrapper(map_name=vault_name)
     for vault_uid in vault_uid_list:
         pkl_data = pickle.load(
             open(os.path.join(pkl_path, f"{vault_name}_{vault_uid}.pkl"), "rb")
@@ -61,7 +42,6 @@ for vault_name in vault_name_list:
             json_path, f"{vault_name}_{vault_uid}_{num_episodes}.json"
         )
         fd = open(json_file, "a", encoding="utf-8")
-        env = SMACTextWrapper(map_name=vault_name, lazy=False)
         static_prompt = (
             config.SYSTEM_PROMPT + "\n" + env.map_config + "\n" + env.unit_config + "\n"
         )
@@ -87,9 +67,13 @@ for vault_name in vault_name_list:
                 )
 
                 prompt = {
-                    "input": (static_prompt + text_obs)
-                    .join(prompt_format["user"])
-                    .join(prompt_format["assistant"]),
+                    "input": [
+                        {"role": "system", "content": static_prompt},
+                        {
+                            "role": "user",
+                            "content": text_obs + instruct_prompt,
+                        },
+                    ],
                     "target": text_act,
                 }
 
@@ -101,4 +85,5 @@ for vault_name in vault_name_list:
         fd.close()
         print(f"Finish updating {json_file}")
         # break
+    env.close()
     # break
