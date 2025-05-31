@@ -142,4 +142,3 @@ if __name__ == "__main__":
     print(f"Qwen Model Path: {QWEN_MODEL_PATH}")
     print(f"SMAC Map Name: {SMAC_MAP_NAME}")
     print(f"Learning Rate: {LEARNING_RATE}")
-    print(f"Device: {DEVICE}")

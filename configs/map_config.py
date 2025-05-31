@@ -4,11 +4,40 @@ class MapConfig(object):
 
         self.config = {
             "3m": {
-                "map_info": "The map is 3m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 3 Marine units.\nThe enemy controls 3 Marine units.\n",
+                "map_info": (
+                    "The map is 3m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 3 Marine units.\nThe enemy controls 3 Marine units.\n"
+                    "Thus intotal 9 types of actions can be selected for each agent.\n"
+                    "0: No-op(only available for dead agents)\n"
+                    "1: STOP\n"
+                    "2: MOVE_NORTH\n"
+                    "3: MOVE_SOUTH\n"
+                    "4: MOVE_EAST\n"
+                    "5: MOVE_WEST\n"
+                    "6: ATTACK Enemy 0\n"
+                    "7: ATTACK Enemy 1\n"
+                    "8: ATTACK Enemy 2\n"
+                ),
                 "units_info": ["marine"],
             },
             "8m": {
-                "map_info": "The map is 8m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 8 Marine units.\nThe enemy controls 8 Marine units.\n",
+                "map_info": (
+                    "The map is 8m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 8 Marine units.\nThe enemy controls 8 Marine units.\n"
+                    "Thus intotal 14 types of actions can be selected for each agent.\n"
+                    "0: No-op(only available for dead agents)\n"
+                    "1: STOP\n"
+                    "2: MOVE_NORTH\n"
+                    "3: MOVE_SOUTH\n"
+                    "4: MOVE_EAST\n"
+                    "5: MOVE_WEST\n"
+                    "6: ATTACK Enemy 0\n"
+                    "7: ATTACK Enemy 1\n"
+                    "8: ATTACK Enemy 2\n"
+                    "9: ATTACK Enemy 3\n"
+                    "10: ATTACK Enemy 4\n"
+                    "11: ATTACK Enemy 5\n"
+                    "12: ATTACK Enemy 6\n"
+                    "13: ATTACK Enemy 7\n"
+                ),
                 "units_info": ["marine"],
             },
             "25m": {
@@ -16,7 +45,22 @@ class MapConfig(object):
                 "units_info": ["marine"],
             },
             "5m_vs_6m": {
-                "map_info": "The map is 5m_vs_6m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 5 Marine units.\nThe enemy controls 6 Marine units.\n",
+                "map_info": (
+                    "The map is 5m_vs_6m of 32*32 sized square map.\nThe available area of x axis is from 0 to 32, and the y axis is from 7 to 25.\nThe enemy units are at (23, 16) point and your units are at (9, 16) point initially.\nThe ememy controls all the units to move and attack (9, 16) point along the way.\nThere is no terrain advantages nor choke points in this map.\nYou can control 5 Marine units.\nThe enemy controls 6 Marine units.\n"
+                    "Thus intotal 12 types of actions can be selected for each agent.\n"
+                    "0: No-op(only available for dead agents)\n"
+                    "1: STOP\n"
+                    "2: MOVE_NORTH\n"
+                    "3: MOVE_SOUTH\n"
+                    "4: MOVE_EAST\n"
+                    "5: MOVE_WEST\n"
+                    "6: ATTACK Enemy 0\n"
+                    "7: ATTACK Enemy 1\n"
+                    "8: ATTACK Enemy 2\n"
+                    "9: ATTACK Enemy 3\n"
+                    "10: ATTACK Enemy 4\n"
+                    "11: ATTACK Enemy 5\n"
+                ),
                 "units_info": ["marine"],
             },
             "8m_vs_9m": {

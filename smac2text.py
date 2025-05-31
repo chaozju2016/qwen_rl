@@ -22,12 +22,12 @@ import config
 rel_dir = "/mnt/HDD/wangchao/smac_v1"
 vlt_name = input()
 vault_name_list = [vlt_name]
-vault_uid_list = ["Good", "Medium", "Poor"]
+vault_uid_list = ["Good"]  # , "Medium", "Poor"]
 pkl_path = "/mnt/HDD/wangchao/smac_v1_origin/"
 json_path = "/mnt/HDD/wangchao/smac_v1_json/"
 
 # %%
-instruct_prompt = "Given these information, please give integer-indexed action for each agent, for example, if you control 3 agents that should perform action 5, action 6 and action 2, response 5,6,2\n\n"
+instruct_prompt = "Given these information, please give integer-indexed action for each agent, for example, if you control 3 agents that should perform action 5, action 6 and action 2, response 5,6,2. Actions you give should be available.\n\n"
 
 
 # %%

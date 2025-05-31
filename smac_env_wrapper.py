@@ -148,10 +148,9 @@ class SMACTextWrapper:
                 + "\n"
             )
 
-            # # Add available actions for this agent
-            # avail = avail_actions[i]
-            # available_action_indices = [j for j, a in enumerate(avail) if a == 1]
-            # text += f"  Available actions: {available_action_indices}\n"
+            # Add available actions for this agent
+            available_action_indices = np.where(avail_actions[i])[0]
+            text += f" Available actions for Agent {i}: {available_action_indices}\n"
 
         visibility_matrix = self.env.get_visibility_matrix()
         visible_enemies = np.arange(self.n_enemies)[
