@@ -10,7 +10,7 @@ OBS_TO_TEXT_SCRIPT="/home/wangchao/work/qwen_rl/obs_to_text.py"
 
 # 定义游戏地图列表
 GAMES=(
-    # "protoss_10_vs_10"
+    "protoss_10_vs_10"
     "protoss_5_vs_5"
     "terran_10_vs_10"
     "terran_5_vs_5"
@@ -19,8 +19,20 @@ GAMES=(
     "zerg_5_vs_5"
 )
 
+# 让用户判断Algo是mappo还是happo，如果用户直接按回车，默认是mappo
+read -p "请输入算法类型 (默认 mappo): " ALGO
+if [ -z "$ALGO" ]; then
+    ALGO="mappo"
+fi
+# 如果用户输入的既非mappo也非happo，则提示错误并退出
+if [[ "$ALGO" != "mappo" && "$ALGO" != "happo" ]]; then
+    echo "❌ 错误的算法类型: $ALGO"
+    echo "请使用 'mappo' 或 'happo'。"
+    exit 1
+fi
+
 # 基础参数
-BASE_ARGS="--env_name smacv2 --mode eval --use_rnn --use_value_norm --state_type AS --eval_episodes 2000 --n_eval_rollout_threads 32 --seed 1 --algo mappo"
+BASE_ARGS="--env_name smacv2 --mode eval --use_rnn --use_value_norm --state_type AS --eval_episodes 2000 --n_eval_rollout_threads 32 --seed 1 --algo $ALGO"
 
 # 输出开始信息
 echo "============================================"
@@ -41,7 +53,7 @@ for i in "${!GAMES[@]}"; do
     echo "----------------------------------------"
     
     # 构建模型路径
-    MODEL_PATH="$MODEL_BASE_PATH/MAPPO-smacv2_${GAME}-seed1/final-torch.model"
+    MODEL_PATH="$MODEL_BASE_PATH/$(echo "$ALGO" | tr '[:lower:]' '[:upper:]')-smacv2_${GAME}-seed1/final-torch.model"
     
     # 构建完整命令
     COMMAND="python $TRAIN_SCRIPT $BASE_ARGS --map_name $GAME --model $MODEL_PATH"
