@@ -93,7 +93,7 @@ echo "============================================"
 
 # 数据集目录
 DATASET_DIR="/mnt/HDD/wangchao/smac_v2_json"
-HF_REPO="chaozju2016/smac_v1_json"
+HF_REPO="chaozju2016/smac_v2_json"
 
 # 检查目录是否存在
 if [ ! -d "$DATASET_DIR" ]; then
