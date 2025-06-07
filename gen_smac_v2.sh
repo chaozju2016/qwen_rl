@@ -61,15 +61,15 @@ for i in "${!GAMES[@]}"; do
     # 显示即将执行的命令
     echo "执行命令: $COMMAND"
     
-    # 执行命令
-    if eval $COMMAND; then
-        echo "✅ $GAME 评估完成"
-        # 休眠10秒以避免过快输出
-        sleep 10
-    else
-        echo "❌ $GAME 评估失败，错误码: $?"
-        echo "继续执行下一个地图..."
-    fi
+    # # 执行命令
+    # if eval $COMMAND; then
+    #     echo "✅ $GAME 评估完成"
+    #     # 休眠10秒以避免过快输出
+    #     sleep 10
+    # else
+    #     echo "❌ $GAME 评估失败，错误码: $?"
+    #     echo "继续执行下一个地图..."
+    # fi
     
     echo "----------------------------------------"
 done

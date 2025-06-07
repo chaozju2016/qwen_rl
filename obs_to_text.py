@@ -7,68 +7,137 @@ import tqdm
 
 from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
 
+direction_info = {
+    "abs": {
+        0: "北",
+        1: "南",
+        2: "东",
+        3: "西",
+    },
+    "rel": {
+        0: "上方",
+        1: "下方",
+        2: "右侧",
+        3: "左侧",
+    },
+}
+direction_type = "rel"  # "abs" or "rel"
+assert (
+    direction_type in direction_info.keys()
+), f"direction_type should be in {list(direction_info.keys())}"
+
 system_prompt = {
-    "introduction": (
-        "SMACv2 (StarCraft Multi-Agent Challenge v2) 是一个实时战略游戏环境，"
-        "你将作为中央控制器同时指挥多个友方单位与敌方作战。"
-        "\n"
-    ),
+    "introduction": {
+        "central_controller": (
+            "SMACv2 (StarCraft Multi-Agent Challenge v2) 是一个实时战略游戏环境,"
+            "你将作为中央控制器同时指挥多个友方单位与敌方作战。"
+            "\n"
+        ),
+        "individual_agent": (
+            "SMACv2 (StarCraft Multi-Agent Challenge v2) 是一个实时战略游戏环境,"
+            "你与友方单位一起与敌方作战。"
+            "\n"
+        ),
+    },
     "map_info": {
-        "protoss_5_vs_5": "友方有5个单位，敌方有5个单位\n",
-        "protoss_10_vs_10": "友方有10个单位，敌方有10个单位\n",
-        "terran_5_vs_5": "友方有5个单位，敌方有5个单位\n",
-        "terran_10_vs_10": "友方有10个单位，敌方有10个单位\n",
-        "zerg_5_vs_5": "友方有5个单位，敌方有5个单位\n",
-        "zerg_10_vs_10": "友方有10个单位，敌方有10个单位\n",
-        "zerg_10_vs_11": "友方有10个单位，敌方有11个单位\n",
+        "protoss_5_vs_5": "友方有5个单位,敌方有5个单位\n",
+        "protoss_10_vs_10": "友方有10个单位,敌方有10个单位\n",
+        "terran_5_vs_5": "友方有5个单位,敌方有5个单位\n",
+        "terran_10_vs_10": "友方有10个单位,敌方有10个单位\n",
+        "zerg_5_vs_5": "友方有5个单位,敌方有5个单位\n",
+        "zerg_10_vs_10": "友方有10个单位,敌方有10个单位\n",
+        "zerg_10_vs_11": "友方有10个单位,敌方有11个单位\n",
     },
     "race": {
         "terran": (
             "敌我均会包含下列三种单位："
-            "Marine - 基础步兵单位，血量45，护甲0，攻击力6，射程5。"
-            "Marauder - 重装步兵，血量125，护甲1，攻击力10，射程6。"
-            "Medivac - 医疗运输船，血量150，护甲1，无攻击能力但可治疗友军。"
+            "Marine - 基础步兵单位,血量45,护甲0,攻击力6,射程5游戏单位。"
+            "Marauder - 重装步兵,血量125,护甲1,攻击力10,射程6游戏单位。"
+            "Medivac - 医疗运输船,血量150,护甲1,无攻击能力但可治疗友军。"
             "\n"
         ),
         "zerg": (
             "敌我均会包含下列三种单位："
-            "Zergling - 近战单位，血量35，护甲0，攻击力5，射程1。"
-            "Hydralisk - 远程单位，血量80，护甲0，攻击力12，射程5。"
-            "Baneling - 自爆单位，血量30，护甲0，爆炸伤害80，射程2.2。"
+            "Zergling - 近战单位,血量35,护甲0,攻击力5,射程1游戏单位。"
+            "Hydralisk - 远程单位,血量80,护甲0,攻击力12,射程5游戏单位。"
+            "Baneling - 自爆单位,血量30,护甲0,爆炸伤害80,射程2.2游戏单位。"
             "\n"
         ),
         "protoss": (
             "敌我均会包含下列三种单位："
-            "Zealot - 近战单位，血量100+50护盾，护甲1，攻击力8×2，射程1。"
-            "Stalker - 远程单位，血量80+80护盾，护甲1，攻击力10，射程6。"
-            "Colossus - 重型单位，血量200+150护盾，护甲1，攻击力15×2，射程7。"
+            "Zealot - 近战单位,血量100+50护盾,护甲1,攻击力8×2,射程1游戏单位。"
+            "Stalker - 远程单位,血量80+80护盾,护甲1,攻击力10,射程6游戏单位。"
+            "Colossus - 重型单位,血量200+150护盾,护甲1,攻击力15×2,射程7游戏单位。"
             "\n"
         ),
     },
     "coordination": (
-        "所有地图的标准尺寸为32x32游戏单位，在相对坐标系统中对应[-1,1]x[-1,1]的范围"
+        "所有地图的标准尺寸为32x32游戏单位,在相对坐标系统中对应[-1,1]x[-1,1]的范围"
         "所有单位位置使用相对坐标系统："
-        "以地图中心为原点(0,0)，坐标值范围[-1,1]。"
-        "格式为(rel_x, rel_y)，其中rel_x正值=右侧/负值=左侧，rel_y正值=上方/负值=下方。"
-        "例如Marine位于(0.15, -0.22)表示其在地图中心右侧0.15、下方0.22处。"
+        "以地图中心为原点(0,0),坐标值范围[-1,1]。"
+        f"格式为(rel_x, rel_y),其中rel_x正值={direction_info[direction_type][2]}/负值={direction_info[direction_type][3]},rel_y正值={direction_info[direction_type][0]}/负值={direction_info[direction_type][1]}。"
+        f"例如Marine位于(0.15, -0.22)表示其在地图中心右侧0.15、下方0.22处。"
         "\n"
     ),
-    "task": (
-        "你是一个多智能体强化学习环境中的中央控制器，需要同时控制所有友方单位进行实时战略作战。"
-        "主要目标：消灭所有敌方单位，同时尽可能保护友方单位存活。\n"
-        "输出格式：为每个友方单位选择一个最合适的有效动作，格式为字符串 'action_0,action_1, ...'"
-        "例如，如果你控制3个友方单位，分别选择动作5、6和2，"
-        "则输出 '5,6,2'。"
-        "如果某个友方单位已死亡，则只能为其选择动作0。\n"
-        "\n"
+    "task": {
+        "central_controller": (
+            "你的任务是根据友方单位和敌方单位的状态信息,为每个友方单位选择一个最合适的有效动作。"
+            "你需要考虑友方单位的生命值、位置等信息,并在每个step中做出决策。"
+            "目标是最大化友方单位的生存时间和击败敌方单位。"
+            "如果某个友方单位已死亡,则只能为其选择动作0(无动作)。"
+            "\n"
+        ),
+        "individual_agent": (
+            "你的任务是根据友方单位和敌方单位的状态信息,为你自己选择一个最合适的有效动作。"
+            "你需要考虑自己的生命值、位置等信息,并在每个step中做出决策。"
+            "目标是最大化友方单位的生存时间和击败敌方单位。"
+            "如果你已死亡,则只能选择动作0(无动作)。"
+            "\n"
+        ),
+    },
+}
+role_type = "central_controller"
+assert (
+    role_type in system_prompt["introduction"].keys()
+), f"role_type should be in {list(system_prompt['introduction'].keys())}"
+
+instruct_prompt = {
+    "central_controller": (
+        "根据以上信息,为每个友方单位选择一个最合适的有效动作,"
+        "格式为可行动作编号int构成的字符串 'action_0,action_1, ...'。"
+        "如果某个友方单位已死亡,则只能为其选择动作0。\n\n"
+    ),
+    "individual_agent": (
+        "根据以上信息,为你自己选择一个最合适的有效动作,"
+        "格式为可行动作编号int构成的字符串 'action'。"
+        "如果你已死亡,则只能选择动作0。\n\n"
     ),
 }
 
-instruct_prompt = (
-    "根据以上信息，为每个友方单位选择一个最合适的有效动作，"
-    "格式为字符串 'action_0,action_1, ...'。"
-    "如果某个友方单位已死亡，则只能为其选择动作0。\n\n"
-)
+action_info = {
+    0: "无动作(单位已死亡)",
+    1: "原地不动",
+    2: f"向{direction_info[direction_type][0]}移动",
+    3: f"向{direction_info[direction_type][1]}移动",
+    4: f"向{direction_info[direction_type][2]}移动",
+    5: f"向{direction_info[direction_type][3]}移动",
+}
+
+
+def get_static_action_info(
+    num_actions: int = 6, num_self_actions: int = 6, is_medivac=False
+) -> str:
+    """
+    根据可用动作的索引列表,返回对应的动作信息字符串。
+    """
+    action_info_prompt = ""
+    for action_index in range(num_actions):
+        action_str = action_info.get(
+            action_index,
+            f"攻击敌方{'(对于medivac则为治疗友方)' if is_medivac else ''}单位{action_index-num_self_actions}",
+        )
+        action_info_prompt += f"动作{action_index}含义为{action_str}\n"
+    return action_info_prompt
 
 
 def build_ally_prompt(
@@ -86,15 +155,23 @@ def build_ally_prompt(
     ), "avail_actions_mask should be a 1D tensor"
 
     if health_in_percent <= 0:
-        return f"{unit_name}已死亡，可用动作为[0]。\n"
+        return f"{unit_name}已死亡,可用动作为[0]。\n"
 
-    horizontal = "右侧" if rel_x > 0 else "左侧" if rel_x < 0 else "中央"
-    vertical = "上方" if rel_y > 0 else "下方" if rel_y < 0 else "中央"
+    horizontal = (
+        f"{direction_info[direction_type][2]}"
+        if rel_x > 0
+        else f"{direction_info[direction_type][3]}" if rel_x < 0 else "中央"
+    )
+    vertical = (
+        f"{direction_info[direction_type][0]}"
+        if rel_y > 0
+        else f"{direction_info[direction_type][1]}" if rel_y < 0 else "中央"
+    )
 
     prompt = (
-        f"{unit_name}当前拥有{health_in_percent:.0f}%的生命值{f'和{sheild*100:.0f}%的护盾' if sheild else ''}，"
-        f"位于地图{horizontal}{abs(rel_x):.2f}, {vertical}{abs(rel_y):.2f}位置，"
-        f"其{'技能冷却时间'if is_cooldown_in_sec else '剩余能量'}为{energy_or_cooldown:.1f}{'秒'if is_cooldown_in_sec else '点'}，"
+        f"{unit_name}当前拥有{health_in_percent:.0f}%的生命值{f'和{sheild*100:.0f}%的护盾' if sheild else ''},"
+        f"位于地图{horizontal}{abs(rel_x):.2f}, {vertical}{abs(rel_y):.2f}位置,"
+        # f"其{'技能冷却时间'if is_cooldown_in_sec else '剩余能量'}为{energy_or_cooldown:.1f}{'秒'if is_cooldown_in_sec else '点'},"
         f"可用动作为{torch.where(avail_actions_mask)[0].tolist()}。"
         "\n"
     )
@@ -109,13 +186,21 @@ def build_enemy_prompt(
     sheild=None,
 ):
     if health_in_percent <= 0:
-        return f"{unit_name}已死亡，可用动作为[0]。\n"
+        return f"{unit_name}已死亡,可用动作为[0]。\n"
 
-    horizontal = "右侧" if rel_x > 0 else "左侧" if rel_x < 0 else "中央"
-    vertical = "上方" if rel_y > 0 else "下方" if rel_y < 0 else "中央"
+    horizontal = (
+        f"{direction_info[direction_type][2]}"
+        if rel_x > 0
+        else f"{direction_info[direction_type][3]}" if rel_x < 0 else "中央"
+    )
+    vertical = (
+        f"{direction_info[direction_type][0]}"
+        if rel_y > 0
+        else f"{direction_info[direction_type][1]}" if rel_y < 0 else "中央"
+    )
 
     prompt = (
-        f"{unit_name}当前拥有{health_in_percent:.0f}%的生命值{f'和{sheild*100:.0f}%的护盾' if sheild else ''}，"
+        f"{unit_name}当前拥有{health_in_percent:.0f}%的生命值{f'和{sheild*100:.0f}%的护盾' if sheild else ''},"
         f"位于地图{horizontal}{abs(rel_x):.2f}, {vertical}{abs(rel_y):.2f}位置。"
         "\n"
     )
@@ -240,10 +325,12 @@ if __name__ == "__main__":
     json_path = "/mnt/HDD/wangchao/smac_v2_json/"
     os.makedirs(json_path, exist_ok=True)
     map_config_path = "/home/wangchao/work/marl-ppo-suite/envs/smacv2/config/"
+    max_episodes = 2000
 
     pkl_files = os.listdir(pkl_path)
     pkl_files = [f for f in pkl_files if f.endswith(".pkl")]
     pkl_files.sort()
+    print(f"Found {len(pkl_files)} pkl files in {pkl_path}")
     for pkl_file in pkl_files:
         game_name, algo_name = pkl_file.rsplit(".", 1)[0].rsplit("_", 1)
         race = game_name.split("_")[0]
@@ -316,18 +403,25 @@ if __name__ == "__main__":
         }
 
         static_prompt = (
-            system_prompt["introduction"]
-            + f"当前游戏地图为{game_name}"
+            system_prompt["introduction"][role_type]
+            + f"当前游戏地图为{game_name},"
             + system_prompt["map_info"].get(game_name, "")
             + system_prompt["race"].get(race, "")
             + system_prompt["coordination"]
-            + system_prompt["task"]
+            + system_prompt["task"][role_type]
+            + get_static_action_info(
+                num_actions=total_actions,
+                num_self_actions=total_actions - n_enemies,
+                is_medivac=(race == "terran"),
+            )
         )
 
         # Load trajectory
         evaluation_data = pickle.load(open(os.path.join(pkl_path, pkl_file), "rb"))
         assert isinstance(evaluation_data, list), "Evaluation data should be a list"
-        for episode in tqdm.tqdm(evaluation_data):
+        num_episodes = min(len(evaluation_data), max_episodes)
+
+        for episode in tqdm.tqdm(evaluation_data[:num_episodes]):
             assert isinstance(episode, dict), "Each episode should be a dict"
             episode_length = len(episode["state"])
             for step in range(episode_length):
@@ -366,11 +460,12 @@ if __name__ == "__main__":
                         {"role": "system", "content": static_prompt},
                         {
                             "role": "user",
-                            "content": step_prompt + instruct_prompt,
+                            "content": step_prompt + instruct_prompt[role_type],
                         },
                     ],
                     "target": text_act,
                 }
+                # print(json.dumps(prompt, indent=2, ensure_ascii=False))
                 json.dump(prompt, fd, ensure_ascii=False)
                 fd.write("\n")
                 # break
